@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <array>
 #include <algorithm>
 #include <fstream>
 #include <queue> 
@@ -188,7 +190,7 @@ public:
 
         if (!inFile.is_open()) {
             std::cerr << "Не удалось открыть файл для чтения!" << std::endl;
-            return {{}, 0, {}};
+            return {};
         }
 
         std::streamsize fileSize = inFile.tellg();
@@ -348,7 +350,7 @@ namespace Huffman {
         delete node;
     }
 
-    uint16_t DecompressWithHuffmanTable(BitReader& reader, std::unordered_map<uint16_t, std::string> huffmanTable, Node* root) {
+    uint16_t DecompressWithHuffmanTable(BitReader& reader, Node* root) {
         Huffman::Node* curr = root;
         while (curr->left != nullptr && curr->right != nullptr) {
             int bit = reader.ReadBit();
@@ -363,10 +365,10 @@ namespace Huffman {
     }
 }
 
-std::vector<uint8_t> Decompress(BitReader& reader, std::unordered_map<uint16_t, std::string> huffmanTable, Huffman::Node* root) {
+std::vector<uint8_t> Decompress(BitReader& reader, Huffman::Node* root) {
     std::vector<uint8_t> output;
     while (true) {
-        uint16_t symbol = Huffman::DecompressWithHuffmanTable(reader, huffmanTable, root);
+        uint16_t symbol = Huffman::DecompressWithHuffmanTable(reader, root);
         if (symbol > 256) {
             uint16_t offset = reader.ReadNumbers(12) + 1;
             uint16_t length = symbol - 254;
@@ -404,7 +406,7 @@ void DecompressArchive(std::string filename, std::unordered_map<uint16_t, std::s
     Huffman::SetHuffmanTree(root, "", huffmanTable);
     
     std::vector<uint8_t> output;
-    output = Decompress(reader, huffmanTable, root);
+    output = Decompress(reader, root);
     writer.SaveFile(outFilename, output);
 }
 
