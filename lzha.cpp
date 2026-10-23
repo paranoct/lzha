@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <cstdint>
 #include <array>
 #include <algorithm>
@@ -116,24 +117,11 @@ public:
         return value;
     }
 
-    bool checkFile(const std::string& filename) {
-        bool isArchive;
-        std::ifstream inFile(filename, std::ios::binary | std::ios::in | std::ios::ate);
-
-        std::array<uint8_t, 4> readMagic{};
-        inFile.read(reinterpret_cast<char*>(readMagic.data()), readMagic.size());
-        if (readMagic != MAGIC_BYTES) {
-            std::cerr << "Ошибка: Неверная сигнатура файла (это не архив LZHA)!" << std::endl;
-            isArchive = false;
-        }
-        return isArchive;
-    }
-
     std::tuple<std::vector<uint32_t>, std::vector<uint8_t>> LoadArchive(const std::string& filename) {
         std::ifstream inFile(filename, std::ios::binary | std::ios::in | std::ios::ate);
 
         if (!inFile.is_open()) {
-            std::cerr << "Не удалось открыть файл для чтения!" << std::endl;
+            std::cerr << "Failed to open file for reading" << std::endl;
             return {{}, {}};
         }
 
@@ -145,14 +133,14 @@ public:
         std::array<uint8_t, 4> readMagic{};
         inFile.read(reinterpret_cast<char*>(readMagic.data()), readMagic.size());
         if (readMagic != MAGIC_BYTES) {
-            std::cerr << "Ошибка: Неверная сигнатура файла (это не архив LZHA)!" << std::endl;
+            std::cerr << "Error: file is not LZHA-archhive" << std::endl;
         }
 
         uint8_t readVersion = 0;
         inFile.read(reinterpret_cast<char*>(&readVersion), sizeof(readVersion));
 
         if (readVersion > VERSION) {
-            std::cerr << "Ошибка: Архив создан в более новой версии программы (" 
+            std::cerr << "Error: archive was created by more recent version (" 
                     << std::hex << (int)readVersion << ")!" << std::endl;
             return {{}, {}};
         }
@@ -189,7 +177,7 @@ public:
         std::ifstream inFile(filename, std::ios::binary | std::ios::in | std::ios::ate);
 
         if (!inFile.is_open()) {
-            std::cerr << "Не удалось открыть файл для чтения!" << std::endl;
+            std::cerr << "Failed to open file for reading" << std::endl;
             return {};
         }
 
@@ -387,12 +375,12 @@ std::vector<uint8_t> Decompress(BitReader& reader, Huffman::Node* root) {
     return output;
 }
 
-void DecompressArchive(std::string filename, std::unordered_map<uint16_t, std::string>& huffmanTable, std::string outFilename) {
+int DecompressArchive(std::string filename, std::unordered_map<uint16_t, std::string>& huffmanTable, std::string outFilename) {
     BitReader read({});
     auto [vecFreq, bytes] = read.LoadArchive(filename);
     
     if (bytes.empty()) {
-        return;
+        return 1;
     }
 
     BitReader reader(bytes);
@@ -408,15 +396,16 @@ void DecompressArchive(std::string filename, std::unordered_map<uint16_t, std::s
     std::vector<uint8_t> output;
     output = Decompress(reader, root);
     writer.SaveFile(outFilename, output);
+    return 0;
 }
 
-void CompressArchive(std::string filename, std::string outFilename) {
+int CompressArchive(std::string filename, std::string outFilename) {
     BitReader reader({});
     BitWriter writer;
     std::vector<uint8_t> rawData = reader.LoadFile(filename);
 
     if (rawData.empty()) {
-        return;
+        return 1;
     }
     
     std::vector<LZ77::Token> compressedStream = LZ77::CompressLZ77(rawData);
@@ -456,38 +445,64 @@ void CompressArchive(std::string filename, std::string outFilename) {
     }
 
     writer.SaveArchive(outFilename, uniquePairs, symbols, freq);
+    return 0;
 }
 
-int main() {
-    std::cout << "compress(0)/decompress(1)\n";
-    int choise;
-    std::cin >> choise;
-
-    switch(choise) {
-    case 1: {
-        std::cout << "enter the name of file to decompress: ";
-        std::string filename;
-        std::cin >> filename;
-        std::cout << "enter the name of file after decompress: ";
-        std::string outFilename;
-        std::cin >> outFilename;
-        std::unordered_map<uint16_t, std::string> huffmanTable;
-        DecompressArchive(filename, huffmanTable, outFilename);
-        break;
-    }
-    case 0: {
-        std::cout << "enter the name of file to compress: ";
-        std::string filename;
-        std::cin >> filename;
-        std::cout << "enter the name of file after copmress: ";
-        std::string outFilename;
-        std::cin >> outFilename;
-        CompressArchive(filename, outFilename);
-        break;
-    }
-    default:
-        std::cout << "wrong choise";
+int main(int argc, char* argv[]) {
+    namespace fs = std::filesystem;
+    if (argc < 4) {
+        if (argc == 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+            std::cout << "Using: " << argv[0] << " [mode] [input file] [output file]\n";
+            std::cout << "[mode] - compress/decompress\n[input file] - path for input file\n[output file] - path for output file\n";
+            return 0;
+        }
+        std::cout << "Using: " << argv[0] << " [mode] [input file] [output file]\n";
         return 1;
+    }
+
+    fs::path inputFilePath;
+    fs::path outputFilePath;
+    int isCompress = true;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (i == 1) {
+            if (arg == "compress") {
+                isCompress = 1;
+            }
+            else if (arg == "decompress") {
+                isCompress = 0;
+            }
+            else {
+                std::cout << "Invalid mode. Type --help for more information\n";
+                return 1;
+            }
+        }
+        else if (i == 2) {
+            inputFilePath = fs::absolute(arg);
+        }
+        else if (i == 3) {
+            outputFilePath = fs::absolute(arg);
+        }
+    }
+
+    if (!fs::exists(inputFilePath)) {
+        std::cerr << "Input file does not exist\n";
+        return 1;
+    }
+
+    switch(isCompress){
+    case 1:
+    {
+        CompressArchive(inputFilePath.string(), outputFilePath.string());
+        break;
+    }
+    case 0:
+    {
+        std::unordered_map<uint16_t, std::string> huffmanTable;
+        DecompressArchive(inputFilePath.string(), huffmanTable, outputFilePath.string());
+        break;
+    }
     }
     return 0;
 }
